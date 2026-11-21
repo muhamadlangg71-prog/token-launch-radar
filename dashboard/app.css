@@ -136,6 +136,31 @@ tbody tr.top3 td:first-child { color: var(--gold); font-weight: 700; }
 .sandbox .field input { min-width: 110px; background: var(--surface); }
 .sandbox .out { font-family: var(--font-num); font-size: 13px; color: var(--muted); }
 .sandbox .out b { color: var(--accent); }
+.sandbox-presets { display: flex; flex-wrap: wrap; align-items: center; gap: var(--step-3); background: var(--canvas); border: 1px solid var(--border); border-radius: var(--radius-control); padding: var(--step-3) var(--step-4); }
+.presets { display: flex; gap: var(--step-2); }
+.preset { min-height: 32px; padding: 0 var(--step-3); font-size: 13px; }
+.preset-note { font-family: var(--font-num); font-size: 13px; color: var(--muted); }
+.preset-note:not(:empty) { color: var(--gold); }
+
+/* Top movers: five cards, one per fastest grower in the top 50. */
+.movers { margin-bottom: var(--step-4); }
+.movers-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--step-3); margin-bottom: var(--step-3); }
+.movers-head h2 { font-size: 17px; }
+.movers-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--step-3); }
+.mover-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-panel);
+  padding: var(--step-3) var(--step-4); display: grid; gap: var(--step-1); cursor: pointer;
+}
+.mover-card:hover { border-color: var(--accent-dim); }
+.mover-card .mover-growth { font-family: var(--font-num); font-size: 15px; font-weight: 700; }
+.mover-card b { font-size: 14px; font-weight: 600; }
+
+/* Confidence: a score and a word, coloured by band. */
+.conf { display: grid; gap: 2px; }
+.conf .num { font-size: 15px; font-weight: 700; }
+.conf-high { color: var(--accent); }
+.conf-mid { color: var(--gold); }
+.conf-low { color: var(--negative); }
 .button { min-height: 36px; padding: 0 var(--step-4); border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); color: var(--ink); }
 .button.primary { background: var(--accent); border-color: var(--accent); color: #06131c; font-weight: 600; }
 .empty { padding: var(--step-7) var(--step-5); text-align: center; display: grid; gap: var(--step-3); justify-items: center; }
@@ -188,6 +213,7 @@ tbody tr.top3 td:first-child { color: var(--gold); font-weight: 700; }
   .lede { grid-template-columns: 1fr; gap: var(--step-4); }
   .facts { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; padding-top: var(--step-4); }
   .podium { grid-template-columns: 1fr; }
+  .movers-grid { grid-template-columns: 1fr; }
   .field input { min-width: 0; width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {

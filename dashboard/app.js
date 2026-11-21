@@ -13,7 +13,8 @@
     sort: 'implied', dir: -1, selected: null,
     watchlistOnly: false, tvlMin: 0,
     sandboxWeight: DATA.model.growth_weight, sandboxFallback: DATA.overall_median,
-    sandboxOn: false,
+    sandboxMaturity: DATA.model.maturity_weight || 1,
+    sandboxOn: false, presetNote: '',
   };
 
   var usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -44,19 +45,46 @@
 
   // The model in one function: the page recomputes a row from the snapshot figures and checks the
   // number board.json carries, so the page's code and the board's data are visibly the same
-  // arithmetic. The sandbox changes the growth weight and the fallback multiple (the multiple a
-  // category with too few live comps falls back to) and recomputes every row.
-  function impliedOf(row, model, weight, fallback) {
+  // arithmetic. The sandbox changes the growth weight, the maturity weight and the fallback
+  // multiple (the multiple a category with too few live comps falls back to) and recomputes
+  // every row. The maturity weight scales the age premium: 1 is the submitted model, 0.5 halves
+  // it, 1.5 raises it.
+  function impliedOf(row, model, weight, fallback, maturityWeight) {
     var multiple = (row.category_median !== null && row.category_comps >= 3) ? row.category_multiple : fallback;
     var growth = Math.min(model.growth_cap, Math.max(model.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * weight;
     var age = row.age_days === null || row.age_days === undefined ? model.unknown_age_days : row.age_days;
-    var maturity = model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
+    var mw = maturityWeight === undefined || maturityWeight === null ? 1 : maturityWeight;
+    var maturity = model.maturity_floor + (Math.min(Math.max(age, 0), model.maturity_days) / model.maturity_days) * model.maturity_range * mw;
     return Math.max(1, Math.round(row.tvl_usd * multiple * growthMult * maturity));
   }
   function shownImplied(row) {
     if (!state.sandboxOn) return row.implied_value_usd;
-    return impliedOf(row, DATA.model, state.sandboxWeight, state.sandboxFallback);
+    return impliedOf(row, DATA.model, state.sandboxWeight, state.sandboxFallback, state.sandboxMaturity);
+  }
+
+  // Confidence: 0-100, from the snapshot's own figures. 40 points for the depth of the
+  // category's live bench (full at 12 comps), 30 for TVL size (log scale $5M-$5B), 30 for the
+  // record (15 age known, 15 growth known). A high implied value with a low score is a thin claim.
+  function confClass(score) {
+    if (score >= 70) return 'conf-high';
+    if (score >= 50) return 'conf-mid';
+    return 'conf-low';
+  }
+  function confLabel(score) {
+    if (score >= 70) return 'solid';
+    if (score >= 50) return 'fair';
+    return 'thin';
+  }
+
+  // Top movers: the fastest seven-day TVL growth among the top 50 by implied value, from the
+  // snapshot's raw growth figures. The model clamps growth at 120% when it prices a row, but the
+  // strip shows the raw figure, so a +4448% week reads as what it is: a tiny base exploding.
+  function topMovers() {
+    return DATA.rows.slice(0, 50)
+      .filter(function (r) { return r.change_7d !== null && r.change_7d !== undefined; })
+      .sort(function (a, b) { return b.change_7d - a.change_7d; })
+      .slice(0, 5);
   }
 
   function el(tag, attrs) {
@@ -201,6 +229,7 @@
       else if (key === 'tvl') { av = a.tvl_usd; bv = b.tvl_usd; }
       else if (key === 'growth') { av = a.change_7d === null ? -Infinity : a.change_7d; bv = b.change_7d === null ? -Infinity : b.change_7d; }
       else if (key === 'age') { av = a.age_days === null ? Infinity : a.age_days; bv = b.age_days === null ? Infinity : b.age_days; }
+      else if (key === 'confidence') { av = a.confidence_score; bv = b.confidence_score; }
       else { av = shownImplied(a); bv = shownImplied(b); }
       if (av < bv) return -state.dir;
       if (av > bv) return state.dir;
@@ -232,6 +261,25 @@
         el('div', { class: 'fact' }, el('span', { text: 'Live-token protocols set aside' }), el('b', { text: String(DATA.live_size) })),
         el('div', { class: 'fact' }, el('span', { text: 'Market median mcap/TVL' }), el('b', { text: String(DATA.overall_median) }))
       )
+    );
+  }
+
+  function moversStrip() {
+    var movers = topMovers();
+    if (movers.length === 0) return null;
+    var cards = movers.map(function (r) {
+      return el('div', { class: 'mover-card', tabindex: '0', role: 'button', onclick: function () { openDetail(r.slug); }, onkeydown: function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.slug); } } },
+        el('span', { class: 'mover-growth pos', text: '+' + r.change_7d.toFixed(2) + '% 7d' }),
+        el('b', { text: r.name }),
+        el('span', { class: 'sub', text: 'Rank ' + r.rank + ' · ' + fmtUsd(shownImplied(r)) + ' implied' })
+      );
+    });
+    return el('section', { class: 'movers', 'aria-label': 'Top movers' },
+      el('div', { class: 'movers-head' },
+        el('h2', { text: 'Top movers' }),
+        el('span', { class: 'sub', text: 'Fastest 7-day TVL growth among the top 50 by implied value. Growth is the snapshot\u2019s raw figure; the model clamps it at +120% when it prices a row.' })
+      ),
+      el('div', { class: 'movers-grid' }, cards)
     );
   }
 
@@ -330,6 +378,10 @@
           el('div', { class: 'bar', 'aria-hidden': 'true' }, el('i', { style: 'width:' + Math.max(3, Math.round((shownImplied(r) / max) * 100)) + '%' })),
           el('span', { class: 'num', text: fmtUsd(shownImplied(r)) })
         )),
+        el('td', null, el('div', { class: 'conf' },
+          el('span', { class: 'num ' + confClass(r.confidence_score), text: String(r.confidence_score) }),
+          el('span', { class: 'sub', text: confLabel(r.confidence_score) })
+        )),
         el('td', null, el('span', { class: 'status', text: 'no token' }))
       );
       tbody.appendChild(tr);
@@ -345,6 +397,7 @@
             sortHeader('growth', '7d'),
             sortHeader('age', 'Age'),
             sortHeader('implied', 'Implied value'),
+            sortHeader('confidence', 'Confidence'),
             el('th', { scope: 'col', text: 'Token' })
           )),
           tbody
@@ -388,27 +441,60 @@
     });
     var weightInput = el('input', { type: 'number', id: 'sb-weight', step: '0.1', min: '0', max: '2', value: String(state.sandboxWeight) });
     var fallbackInput = el('input', { type: 'number', id: 'sb-fallback', step: '0.01', min: '0.02', max: '2', value: String(state.sandboxFallback) });
+    var maturityInput = el('input', { type: 'number', id: 'sb-maturity', step: '0.1', min: '0', max: '2', value: String(state.sandboxMaturity) });
     var out = el('span', { class: 'out' });
+    var presetNote = el('span', { class: 'out preset-note', text: state.presetNote || '' });
+    function top3Note(weight, maturity, fallback) {
+      var baseTop = DATA.rows.slice(0, 3);
+      var baseTotal = baseTop.reduce(function (s, r) { return s + r.implied_value_usd; }, 0);
+      var rescored = DATA.rows.map(function (r) { return { slug: r.slug, name: r.name, v: impliedOf(r, m, weight, fallback, maturity) }; });
+      rescored.sort(function (a, b) { return b.v - a.v; });
+      var newTop = rescored.slice(0, 3);
+      var newTotal = newTop.reduce(function (s, r) { return s + r.v; }, 0);
+      var pct = baseTotal > 0 ? ((newTotal - baseTotal) / baseTotal * 100) : 0;
+      var leader = newTop[0] ? newTop[0].name : 'none';
+      var stays = leader === baseTop[0].name ? 'stays #1' : 'takes #1 from ' + baseTop[0].name;
+      return 'Top-3 total ' + fmtUsd(baseTotal) + ' -> ' + fmtUsd(newTotal) + ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%); ' + leader + ' ' + stays + '.';
+    }
     function refreshOut() {
       var top = DATA.rows[0];
       var before = top ? top.implied_value_usd : 0;
-      var after = top ? impliedOf(top, m, state.sandboxWeight, state.sandboxFallback) : 0;
-      var changed = DATA.rows.filter(function (r) { return impliedOf(r, m, state.sandboxWeight, state.sandboxFallback) !== r.implied_value_usd; }).length;
+      var after = top ? impliedOf(top, m, state.sandboxWeight, state.sandboxFallback, state.sandboxMaturity) : 0;
+      var changed = DATA.rows.filter(function (r) { return impliedOf(r, m, state.sandboxWeight, state.sandboxFallback, state.sandboxMaturity) !== r.implied_value_usd; }).length;
       out.textContent = '';
       out.appendChild(document.createTextNode('Rank 1: '));
       out.appendChild(el('b', { text: fmtUsd(before) + ' -> ' + fmtUsd(after) }));
       out.appendChild(document.createTextNode('  ·  ' + changed + ' of ' + DATA.rows.length + ' rows move'));
       if (state.sandboxOn) out.appendChild(el('span', { class: 'modified-badge', text: 'Model modified' }));
     }
-    weightInput.addEventListener('input', function () { state.sandboxWeight = Number(weightInput.value) || 0; state.sandboxOn = true; refreshOut(); render(); });
-    fallbackInput.addEventListener('input', function () { state.sandboxFallback = Number(fallbackInput.value) || DATA.overall_median; state.sandboxOn = true; refreshOut(); render(); });
-    var reset = el('button', { class: 'button', type: 'button', text: 'Reset model', onclick: function () { state.sandboxWeight = m.growth_weight; state.sandboxFallback = DATA.overall_median; state.sandboxOn = false; render(); } });
+    function applyPreset(name, weight, maturity) {
+      state.sandboxWeight = weight;
+      state.sandboxMaturity = maturity;
+      state.sandboxFallback = DATA.overall_median;
+      state.sandboxOn = !(weight === m.growth_weight && maturity === 1);
+      weightInput.value = String(weight);
+      maturityInput.value = String(maturity);
+      fallbackInput.value = String(DATA.overall_median);
+      state.presetNote = name + ': ' + top3Note(weight, maturity, DATA.overall_median);
+      presetNote.textContent = state.presetNote;
+      refreshOut();
+      render();
+    }
+    weightInput.addEventListener('input', function () { state.sandboxWeight = Number(weightInput.value) || 0; state.sandboxOn = true; state.presetNote = ''; refreshOut(); render(); });
+    fallbackInput.addEventListener('input', function () { state.sandboxFallback = Number(fallbackInput.value) || DATA.overall_median; state.sandboxOn = true; state.presetNote = ''; refreshOut(); render(); });
+    maturityInput.addEventListener('input', function () { state.sandboxMaturity = Number(maturityInput.value) || 0; state.sandboxOn = true; state.presetNote = ''; refreshOut(); render(); });
+    var reset = el('button', { class: 'button', type: 'button', text: 'Reset model', onclick: function () { state.sandboxWeight = m.growth_weight; state.sandboxFallback = DATA.overall_median; state.sandboxMaturity = 1; state.sandboxOn = false; state.presetNote = ''; render(); } });
     refreshOut();
+    var presets = el('div', { class: 'presets' },
+      el('button', { class: 'button preset', type: 'button', text: 'Conservative', onclick: function () { applyPreset('Conservative', 0.25, 0.5); } }),
+      el('button', { class: 'button preset', type: 'button', text: 'Base', onclick: function () { applyPreset('Base', m.growth_weight, 1); } }),
+      el('button', { class: 'button preset', type: 'button', text: 'Aggressive', onclick: function () { applyPreset('Aggressive', 1, 1.5); } })
+    );
     return el('section', { class: 'panel model' },
       el('h2', { text: 'How implied value is computed' }),
       el('p', { class: 'sub', text: 'Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The category multiple is earned from the market: the median market-cap/TVL of the live-token protocols in that category, shrunk toward the whole market median of ' + DATA.overall_median + ' where a category has fewer than 3 live comps. One honest limit: the multiple is the market\'s circulating market-cap per dollar of TVL, a screening ratio, not a launch FDV. A valuable protocol can have a weakly accruing token, and TVL can be inflated, so read the board as a screen for where a launch would be worth watching, not as a valuation.' }),
       el('div', { class: 'formula' },
-        'implied = round( tvl_usd x multiple(category) x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ') )'
+        'implied = round( tvl_usd x multiple(category) x (1 + clamp(change_7d, ' + m.growth_floor + ', ' + m.growth_cap + ') / 100 x ' + m.growth_weight + ') x (' + m.maturity_floor + ' + min(age_days, ' + m.maturity_days + ') / ' + m.maturity_days + ' x ' + m.maturity_range + ' x ' + (m.maturity_weight || 1) + ') )'
       ),
       el('p', { class: 'sub', text: 'multiple(category) = w x median(category) + (1 - w) x ' + DATA.overall_median + ', w = n / (n + ' + m.shrink_prior + '), n = live comps in the category (n < ' + m.min_comps + ' means the multiple is the market median), capped to [' + m.multiple_floor + ', ' + m.multiple_cap + ']. TVL and seven-day growth come from the snapshot. Age is the time since the protocol was first listed, the best record of how long it has run with no token; an unlisted age uses ' + m.unknown_age_days + ' days.' }),
       el('h3', { text: 'Category markets' }),
@@ -419,12 +505,18 @@
         )
       ),
       el('h3', { text: 'Model sandbox' }),
-      el('p', { class: 'sub', text: 'Change the two dials and the board recomputes live. Growth weight moves every row; the fallback multiple moves only the rows whose category has too few live comps. The board you submit is the one with the dials at their defaults.' }),
+      el('p', { class: 'sub', text: 'Change the three dials and the board recomputes live. Growth weight moves every row; the maturity weight scales the age premium; the fallback multiple moves only the rows whose category has too few live comps. The presets set the growth and maturity weights together. The board you submit is the one with the dials at their defaults.' }),
       el('div', { class: 'sandbox' },
         el('div', { class: 'field' }, el('label', { for: 'sb-weight', text: 'Growth weight' }), weightInput),
+        el('div', { class: 'field' }, el('label', { for: 'sb-maturity', text: 'Maturity weight' }), maturityInput),
         el('div', { class: 'field' }, el('label', { for: 'sb-fallback', text: 'Fallback multiple' }), fallbackInput),
         reset,
         out
+      ),
+      el('div', { class: 'sandbox-presets' },
+        el('span', { class: 'sub', text: 'Scenarios:' }),
+        presets,
+        presetNote
       )
     );
   }
@@ -493,6 +585,26 @@
       ),
       el('p', { class: 'sub', text: 'Model ' + DATA.model_version + ': the same function scores every protocol. The page recomputes this row as ' + fmtUsd(recomputed) + (recomputedClose ? ', the same number board.json carries.' : ', which differs from the board: the data would be stale.') + ' This is an estimate, not a price.' })
     ));
+    // Confidence, in the drawer's own words: what the score is made of and what limits it.
+    var conf = row.confidence || { score: row.confidence_score, comps_points: 0, tvl_points: 0, data_points: 0 };
+    var confBench = row.category_comps >= 12
+      ? 'a deep bench of ' + row.category_comps + ' live comps in its category'
+      : row.category_comps >= 3
+        ? row.category_comps + ' live comps in its category'
+        : 'only ' + row.category_comps + ' live comp' + (row.category_comps === 1 ? '' : 's') + ', so it is priced off the market median';
+    var confData = conf.data_points >= 30
+      ? 'a complete record'
+      : conf.data_points > 0 ? 'one field missing from its record' : 'no age or growth on its record';
+    dialog.appendChild(el('section', { class: 'detail-section' },
+      el('h3', { text: 'Confidence ' + row.confidence_score + ' / 100 · ' + confLabel(row.confidence_score) }),
+      el('div', { class: 'equation' },
+        el('div', null, el('span', { text: 'Live comps in its category' }), el('b', { class: 'num', text: conf.comps_points + ' / 40' })),
+        el('div', null, el('span', { text: 'TVL size' }), el('b', { class: 'num', text: conf.tvl_points + ' / 30' })),
+        el('div', null, el('span', { text: 'Record completeness' }), el('b', { class: 'num', text: conf.data_points + ' / 30' })),
+        el('div', { class: 'total' }, el('span', { text: 'Confidence' }), el('b', { class: 'num', text: String(row.confidence_score) + ' / 100' }))
+      ),
+      el('p', { class: 'sub', text: 'What drives it: ' + confBench + ' (' + conf.comps_points + '/40), a ' + fmtUsd(row.tvl_usd) + ' TVL (' + conf.tvl_points + '/30), and ' + confData + ' (' + conf.data_points + '/30). A high implied value with a low score is a thin claim; a lower value with a high score is a solid one.' })
+    ));
     if (market) {
       var compRows = market.named.map(function (c) {
         return el('tr', null,
@@ -551,6 +663,7 @@
     shell.appendChild(header());
     shell.appendChild(lede());
     if (state.tab === 'pre-token') shell.appendChild(podium());
+    if (state.tab === 'pre-token') shell.appendChild(moversStrip());
     shell.appendChild(controls());
     shell.appendChild(state.tab === 'pre-token' ? boardTable() : liveTable());
     if (state.tab === 'pre-token') shell.appendChild(modelPanel());

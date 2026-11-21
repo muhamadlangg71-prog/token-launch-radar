@@ -55,6 +55,7 @@ export interface ModelConstants {
   maturity_floor: number;
   maturity_range: number;
   maturity_days: number;
+  maturity_weight: number;
   unknown_age_days: number;
   shrink_prior: number;
   min_comps: number;
@@ -69,6 +70,7 @@ export const MODEL: ModelConstants = {
   maturity_floor: 0.6,
   maturity_range: 0.4,
   maturity_days: 1095,
+  maturity_weight: 1,
   unknown_age_days: 365,
   shrink_prior: 5,
   min_comps: 3,
@@ -128,6 +130,8 @@ export interface BoardRow {
   token_status: 'pre-token';
   age_days: number | null;
   implied_value_usd: number;
+  confidence_score: number;
+  confidence: ConfidenceBreakdown;
   model: {
     category_multiple: number;
     category_median: number | null;
@@ -154,6 +158,8 @@ export interface RadarRow {
   listed_at: string | null;
   age_days: number | null;
   implied_value_usd: number;
+  confidence_score: number;
+  confidence: ConfidenceBreakdown;
   category_multiple: number;
   category_median: number | null;
   category_comps: number;
@@ -300,9 +306,42 @@ export function impliedValue(
   const ageForModel = age ?? model.unknown_age_days;
   const maturityMult =
     model.maturity_floor +
-    (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
+    (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range * model.maturity_weight;
   const implied = Math.max(1, Math.round(protocol.tvl_usd * multiple * growthMult * maturityMult));
   return { implied, multiple, catMedian, comps, growthPct, growthMult, maturityMult, age };
+}
+
+/** A confidence score's three parts, each out of its own cap, adding to the 0-100 score. */
+export interface ConfidenceBreakdown {
+  score: number;
+  comps_points: number;
+  tvl_points: number;
+  data_points: number;
+}
+
+/**
+ * How much to trust one row's implied value, 0-100, from the snapshot's own figures only.
+ * Three parts: the depth of the category's live bench (40 points, full at 12 comps, so a row
+ * priced off the market median because its category has one comp scores low), the protocol's
+ * size (30 points, log-scaled between the snapshot's $5M floor and $5B, so a bigger TVL is a
+ * steadier base), and the record's completeness (30 points: 15 when the listing age is known,
+ * 15 when the seven-day growth is reported). A high implied value with a low score is a thin
+ * claim; a lower value with a high score is a solid one.
+ */
+export function confidenceScore(
+  comps: number,
+  tvlUsd: number,
+  age: number | null,
+  change7d: number | null,
+): ConfidenceBreakdown {
+  const compsPoints = Math.round((Math.min(Math.max(comps, 0), 12) / 12) * 40 * 10) / 10;
+  const lo = Math.log10(5_000_000);
+  const hi = Math.log10(5_000_000_000);
+  const tvlShare = Math.min(1, Math.max(0, (Math.log10(Math.max(tvlUsd, 1)) - lo) / (hi - lo)));
+  const tvlPoints = Math.round(tvlShare * 30 * 10) / 10;
+  const dataPoints = (age !== null ? 15 : 0) + (change7d !== null ? 15 : 0);
+  const score = Math.max(0, Math.min(100, Math.round(compsPoints + tvlPoints + dataPoints)));
+  return { score, comps_points: compsPoints, tvl_points: tvlPoints, data_points: dataPoints };
 }
 
 /** DefiLlama's version-marker rule: a name ending in a release is a pool of another protocol. */
@@ -344,7 +383,8 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
 
   const scored = [...chosen.values()].map((p) => {
     const v = impliedValue(p, snapshot.as_of, model, medians);
-    return { p, v };
+    const confidence = confidenceScore(v.comps, p.tvl_usd, v.age, p.change_7d);
+    return { p, v, confidence };
   });
   scored.sort((a, b) => b.v.implied - a.v.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   return scored.map((s, i) => ({
@@ -362,6 +402,8 @@ export function buildBoard(snapshot: Snapshot, model: ModelConstants = MODEL): B
     token_status: 'pre-token',
     age_days: s.v.age,
     implied_value_usd: s.v.implied,
+    confidence_score: s.confidence.score,
+    confidence: s.confidence,
     model: {
       category_multiple: round4(s.v.multiple),
       category_median: s.v.catMedian,
@@ -519,6 +561,8 @@ export function radarRow(row: BoardRow): RadarRow {
     listed_at: row.listed_at,
     age_days: row.age_days,
     implied_value_usd: row.implied_value_usd,
+    confidence_score: row.confidence_score,
+    confidence: row.confidence,
     category_multiple: row.model.category_multiple,
     category_median: row.model.category_median,
     category_comps: row.model.category_comps,
