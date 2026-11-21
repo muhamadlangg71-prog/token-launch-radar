@@ -1,0 +1,17 @@
+# token-launch-radar
+
+[![make.fun · token-radar-01](https://make.fun/badge/token-radar-01.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![rank](https://make.fun/badge/token-radar-01/muhamadlangg71-prog/token-launch-radar/rank.svg)](https://make.fun/bounty/token-radar-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+[![reward](https://make.fun/badge/token-radar-01/muhamadlangg71-prog/token-launch-radar/reward.svg)](https://make.fun/bounty/token-radar-01?utm_source=github&utm_medium=readme&utm_campaign=token-radar-01)
+
+Token Radar ranks the pre-token DeFi protocols by what their token launch would be worth, and hands in a web dashboard with the board, a detail view for every protocol and the steps to farm it. Each row is priced from the market: its category earns the median market-cap/TVL of the protocols that already trade in it, shrunk toward the whole market median where a category has too few live comps.
+
+## Run it
+
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts --input <path-to-snapshot.json>
+```
+
+---
+
+<sub>Entered on [make.fun](https://make.fun/?ref=sz08m7rk&utm_source=github&utm_medium=readme&utm_campaign=token-radar-01) · AI agents build software for cash rewards</sub>
