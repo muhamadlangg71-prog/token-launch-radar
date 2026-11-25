@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Launch Radar</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <div class="wrap head">
+    <div>
+      <h1>TOKEN LAUNCH <span class="accent">RADAR</span></h1>
+      <p class="sub">protocols with no token yet, ranked by what a launch could be worth &mdash; every value fitted from the snapshot itself</p>
+    </div>
+    <div class="stats" id="stats"></div>
+  </div>
+  <div class="sweep"></div>
+</header>
+<main class="wrap">
+  <nav class="tabs" id="tabs">
+    <button class="tab active" data-view="board">The board</button>
+    <button class="tab" data-view="live">Live tokens <span class="dim">(calibration)</span></button>
+    <button class="tab" data-view="aside">Set aside</button>
+    <button class="tab" data-view="method">Method</button>
+  </nav>
+
+  <section class="panel controls" id="controls">
+    <input id="q" type="search" placeholder="search protocol or chain" autocomplete="off">
+    <select id="f-cat"><option value="">all categories</option></select>
+    <select id="f-chain"><option value="">all chains</option></select>
+    <select id="f-tvl">
+      <option value="0">any TVL</option>
+      <option value="50">TVL &ge; floor ($50M)</option>
+      <option value="250">TVL &ge; $250M</option>
+      <option value="1000">TVL &ge; $1B</option>
+    </select>
+    <label class="chk"><input id="f-watch" type="checkbox"> watchlist only</label>
+    <select id="sort">
+      <option value="rank">sort: rank</option>
+      <option value="implied">implied value</option>
+      <option value="tvl">TVL</option>
+      <option value="growth">7-day growth</option>
+      <option value="age">age</option>
+    </select>
+    <span class="count" id="count"></span>
+  </section>
+
+  <section class="panel" id="view-board">
+    <table id="board">
+      <thead>
+        <tr>
+          <th data-k="rank" class="num">#</th>
+          <th data-k="name">Protocol</th>
+          <th data-k="category">Category</th>
+          <th data-k="tvl" class="num">TVL</th>
+          <th data-k="growth" class="num">7d</th>
+          <th data-k="age" class="num">Age</th>
+          <th data-k="implied" class="num strong">Implied value</th>
+        </tr>
+      </thead>
+      <tbody id="board-body"></tbody>
+    </table>
+  </section>
+
+  <section class="panel hidden" id="view-live">
+    <p class="note">The snapshot's protocols whose token already trades. They are never ranked: their market cap over TVL is the multiple the board is calibrated with.</p>
+    <table>
+      <thead><tr><th>Protocol</th><th>Category</th><th class="num">TVL</th><th class="num">Market cap</th><th class="num">Mcap / TVL</th></tr></thead>
+      <tbody id="live-body"></tbody>
+    </table>
+  </section>
+
+  <section class="panel hidden" id="view-aside">
+    <p class="note">Protocols the rule set aside rather than ranked, each with its reason &mdash; a board that hides its cuts is a board nobody can check.</p>
+    <table><thead><tr><th>Protocol</th><th>Why it is not on the board</th></tr></thead><tbody id="aside-body"></tbody></table>
+  </section>
+
+  <section class="panel hidden" id="view-method">
+    <div id="method"></div>
+  </section>
+</main>
+
+<aside id="drawer" class="hidden">
+  <button id="drawer-close" title="close">&times;</button>
+  <div id="drawer-body"></div>
+</aside>
+
+<script src="app.js"></script>
+<script src="zz-data.js"></script>
+<script>window.RADAR_APP.start();</script>
+</body>
+</html>
